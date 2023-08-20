@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express()
 const port = process.env.PORT || 5000;
@@ -26,11 +27,38 @@ const client = new MongoClient(uri, {
   }
 });
 
+const verifyJWT = (req, res, next) => { 
+  const authorization = req.headers.authorization;
+  if(!authorization){
+    return res.status(401).send({error: true, message: 'unauthorization access'})
+  }
+  const token = authorization.split(' ')[1]
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (error, decoded) => {
+    if(error){
+      return res.status(401).send({error: true, message: 'unauthorized access'})
+    }
+    req.decoded = decoded;
+    next()
+  })
+}
+
 async function run() {
   try {
     const serviceCollection = client.db("genius-car").collection("services")
     const bookingCollection = client.db("genius-car").collection("booking")
 
+    // JWT 
+
+    app.post('/jwt', (req, res) => {
+      const user = req.body;
+      console.log(user);
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: '1h'
+      });
+      res.send({token})
+    })
+
+    // SERVICE ROUTES 
     app.get('/services', async(req, res)=> {
     const query = {}
     const cursor = serviceCollection.find(query)
@@ -52,8 +80,15 @@ async function run() {
       res.send(service)
     })
     
-    app.get('/booking', async (req, res) => {
-      console.log(req.query);
+    // BOOKING ROUTES
+
+    app.get('/booking', verifyJWT, async (req, res) => {
+      const decoded = req.decoded
+      console.log('come back for booking routes', decoded)
+      if(decoded.email !== req.query.email){
+        return res.status(403).send({error: 1, message: 'Forbidden access'})
+
+      }
       let query = {};
       if(req.query.email){
         query = {
